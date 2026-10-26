@@ -187,7 +187,7 @@ static void http_field(puma_parser* hp, const char *field, size_t flen,
   }
 
   /* check for duplicate header */
-  v = rb_hash_aref(hp->request, f);
+  v = rb_hash_lookup2(hp->request, f, Qnil);
 
   if (v == Qnil) {
       v = rb_str_new(value, vlen);

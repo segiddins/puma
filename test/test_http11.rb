@@ -339,4 +339,20 @@ class Http11ParserTest < TestIntegration
 
     assert_equal "Valid\tValue", req['HTTP_DUMMY']
   end
+
+  def test_env_hash_default_does_not_swallow_headers
+    parser = Puma::HttpParser.new
+    req = Hash.new { |h, k| +"" }
+    parser.execute(req, +"GET / HTTP/1.1\r\nHost: example\r\nX-A: 1\r\nX-A: 2\r\n\r\n", 0)
+
+    assert_equal "example", req.fetch("HTTP_HOST")
+    assert_equal "1, 2", req.fetch("HTTP_X_A")
+
+    parser.reset
+    req = Hash.new(+"default")
+    parser.execute(req, +"GET / HTTP/1.1\r\nHost: example\r\n\r\n", 0)
+
+    assert_equal "example", req.fetch("HTTP_HOST")
+    assert_equal "default", req.default
+  end
 end
