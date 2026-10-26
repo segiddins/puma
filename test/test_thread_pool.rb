@@ -365,6 +365,65 @@ class TestThreadPool < PumaTest
     assert rescued
   end
 
+  def test_wait_until_not_full_wakes_when_max_is_raised
+    latch = Queue.new
+    pool = new_pool(0, 1) { latch.pop }
+    pool << 1                      # the single thread is busy: pool is full
+
+    returned = Queue.new
+    waiter = Thread.new { pool.wait_until_not_full; returned << true }
+    sleep 0.05
+    assert_empty returned          # blocked while full
+
+    pool.with_mutex { pool.max = 2 }   # as Server#update_thread_pool_min_max does
+
+    Timeout.timeout(1) { returned.pop }  # must wake up: busy (1) < max (2)
+  ensure
+    latch << true
+    waiter&.join(1)
+  end
+
+  def test_wait_until_not_full_wakes_when_queued_work_is_taken_below_max
+    latch = Queue.new
+    pool = new_pool(0, 1) { latch.pop }
+    pool << 1                      # busy
+    pool << 2                      # queued: busy_threads == 2
+
+    returned = Queue.new
+    waiter = Thread.new { pool.wait_until_not_full; returned << true }
+    sleep 0.05
+    assert_empty returned
+
+    pool.with_mutex { pool.max = 2 }   # still full: busy_threads (2) == max
+    sleep 0.05
+    assert_empty returned
+
+    latch << true                  # item 1 finishes, the thread takes item 2: busy 1 < max 2
+
+    Timeout.timeout(1) { returned.pop }
+  ensure
+    latch << true
+    waiter&.join(1)
+  end
+
+  def test_wait_until_not_full_wakes_when_reap_frees_capacity
+    pool = new_pool(0, 1) { Thread.current.kill }
+    pool << 1                      # the single thread dies while "busy"
+    dead = pool.instance_variable_get(:@processors).first
+    Timeout.timeout(1) { sleep 0.01 while dead.alive? }
+
+    returned = Queue.new
+    waiter = Thread.new { pool.wait_until_not_full; returned << true }
+    sleep 0.05
+    assert_empty returned          # blocked: the dead thread still counts as busy
+
+    pool.reap                      # spawned 1 -> 0 frees the capacity
+
+    Timeout.timeout(1) { returned.pop }
+  ensure
+    waiter&.join(1)
+  end
+
   def test_waiting_on_startup
     pool = new_pool(1, 2)
     assert_equal 1, pool.waiting

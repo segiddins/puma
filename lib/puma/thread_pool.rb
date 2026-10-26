@@ -134,8 +134,17 @@ module Puma
       @shutdown_mutex = Mutex.new
     end
 
-    attr_reader :spawned, :trim_requested, :waiting
-    attr_accessor :min, :max
+    attr_reader :spawned, :trim_requested, :waiting, :max
+    attr_accessor :min
+
+    # Raising the maximum frees capacity: wake anyone blocked in
+    # #wait_until_not_full so they re-check the bound.
+    def max=(max)
+      with_mutex do
+        @max = max
+        @not_full.broadcast
+      end
+    end
 
     # generate stats hash so as not to perform multiple locks
     # @return [Hash] hash containing stat info from ThreadPool
@@ -240,6 +249,10 @@ module Puma
             end
 
             work = todo.shift
+            # Taking queued work lowers busy_threads like entering the idle
+            # wait does; if that brings the pool below max (possible after
+            # max= or reap), wake anyone blocked in #wait_until_not_full.
+            not_full.signal if @spawned - @waiting + todo.size < @max
           end
 
           begin
@@ -394,6 +407,8 @@ module Puma
           processor.kill
           @spawned -= 1
         end
+        # Reaping lowers busy_threads: wake anyone blocked in #wait_until_not_full.
+        @not_full.broadcast unless dead_processors.empty?
       end
     end
 
