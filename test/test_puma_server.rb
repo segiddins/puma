@@ -2598,4 +2598,34 @@ class TestPumaServer < PumaTest
     assert_equal 5, @server.max_threads
     assert_equal 0, @server.min_threads
   end
+
+  def test_body_error_after_response_started_closes_without_second_response
+    body = Object.new
+    body.define_singleton_method(:each) { |&blk| blk.call "A" * 20; raise "boom" }
+    server_run { |env| [200, {"content-length" => "40"}, body] }
+    socket = send_http GET_11
+    data = socket.read_all(timeout: 3)
+    assert_equal "HTTP/1.1 200 OK\r\ncontent-length: 40\r\n\r\n#{'A' * 20}", data
+    assert socket.wait_readable(3)
+    assert_raises(EOFError) { socket.sysread 1 }
+    assert_match(/Rack body.*boom/, @log_writer.stderr.string)
+  end
+
+  def test_body_error_in_chunked_response_closes_without_second_response
+    body = Object.new
+    body.define_singleton_method(:each) { |&blk| blk.call "A" * 20; raise "boom" }
+    server_run { |env| [200, {}, body] }
+    socket = send_http GET_11
+    data = socket.read_all(timeout: 3)
+    assert_equal "HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n14\r\n#{'A' * 20}\r\n", data
+    assert socket.wait_readable(3)
+    assert_raises(EOFError) { socket.sysread 1 }
+  end
+
+  def test_string_body_is_a_clean_500
+    server_run { |env| [200, {}, "hello"] }
+    response = send_http_read_response GET_11
+    assert_equal "HTTP/1.1 500 Internal Server Error", response.status
+    assert_match(/Puma caught this error/, response.body)
+  end
 end

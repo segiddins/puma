@@ -236,13 +236,28 @@ module Puma
       # partial hijack, we write headers, then hand the socket to the app via
       # response_hijack.call
       if response_hijack
+        unless response_hijack.respond_to?(:call)
+          # neither an enumerable nor a streaming body: fail before anything
+          # is written so the client gets a clean 500
+          raise TypeError, "Rack body must respond to #each or #call (got #{response_hijack.class})"
+        end
         fast_write_str socket, io_buffer.read_and_reset
         uncork_socket socket.flush
         response_hijack.call socket
         return :async
       end
 
-      fast_write_response socket, body, io_buffer, chunked, content_length.to_i
+      begin
+        fast_write_response socket, body, io_buffer, chunked, content_length.to_i
+      rescue ConnectionError, SystemCallError, IOError, ThreadPool::ForceShutdown
+        # socket and shutdown errors keep their existing handling
+        raise
+      rescue StandardError => e
+        # the body raised after the response started: a 500 can no longer be
+        # sent, closing is the only way to tell the client it is truncated
+        @log_writer.unknown_error e, client, "Rack body"
+        raise ConnectionError, "Rack body raised after the response started"
+      end
 
       # if we're shutting down, close keep_alive connections
       !shutting_down? && keep_alive ? :keep_alive : :close
