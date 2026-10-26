@@ -339,4 +339,16 @@ class Http11ParserTest < TestIntegration
 
     assert_equal "Valid\tValue", req['HTTP_DUMMY']
   end
+
+  def test_execute_argument_validation
+    parser = Puma::HttpParser.new
+    http = +"GET / HTTP/1.1\r\n\r\n"
+
+    assert_raises(TypeError) { parser.execute({}, nil, 0) }
+    assert_raises(TypeError) { parser.execute({}, 42, 0) }
+    assert_raises(TypeError) { parser.execute(nil, http, 0) }
+    assert_raises(Puma::HttpParserError) { parser.execute({}, http, -1) }
+    assert_raises(Puma::HttpParserError) { parser.execute({}, http, http.bytesize) }
+    assert_raises(TypeError) { parser.execute({}, http, nil) }
+  end
 end

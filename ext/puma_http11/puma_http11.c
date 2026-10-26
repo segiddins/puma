@@ -384,14 +384,18 @@ static VALUE HttpParser_finish(VALUE self)
 static VALUE HttpParser_execute(VALUE self, VALUE req_hash, VALUE data, VALUE start)
 {
   puma_parser *http = HttpParser_unwrap(self);
-  int from = 0;
+  long from = 0;
   char *dptr = NULL;
   long dlen = 0;
 
-  from = FIX2INT(start);
+  Check_Type(req_hash, T_HASH);
+  StringValue(data);
+  from = NUM2LONG(start);
   RSTRING_GETMEM(data, dptr, dlen);
 
-  if(from >= dlen) {
+  if(from < 0) {
+    rb_raise(eHttpParserError, "%s", "Requested start is before data buffer start.");
+  } else if(from >= dlen) {
     rb_raise(eHttpParserError, "%s", "Requested start is after data buffer end.");
   } else {
     http->request = req_hash;
