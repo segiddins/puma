@@ -56,9 +56,15 @@ module Puma
     # Returns false if the reactor is already shut down.
     def add(client)
       @input << client
-      @selector.wakeup
+      begin
+        @selector.wakeup
+      rescue IOError
+        # The selector was closed by #shutdown after the client was accepted:
+        # the select loop drains @input before exiting, so the client has been
+        # (or will be) handed to the block by the shutdown sweep.
+      end
       true
-    rescue ClosedQueueError, IOError # Ignore if selector is already closed
+    rescue ClosedQueueError # already shut down: the client was not accepted
       false
     end
 
