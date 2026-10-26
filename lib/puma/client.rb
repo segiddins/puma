@@ -649,6 +649,12 @@ module Puma
 
       if @partial_part_left > 0
         if @partial_part_left <= chunk.size
+          # The bytes completing the chunk must be its \r\n (just the \n when
+          # the \r was already checked in the previous read).
+          ending = @partial_part_left >= 2 ? CHUNK_VALID_ENDING : CHUNK_VALID_ENDING[1]
+          unless chunk[@partial_part_left - ending.size, ending.size] == ending
+            raise HttpParserError, "Chunk size mismatch"
+          end
           if @partial_part_left > 2
             write_chunk(chunk[0..(@partial_part_left-3)]) # skip the \r\n
           end
@@ -657,12 +663,18 @@ module Puma
         else
           if @partial_part_left > 2
             if @partial_part_left == chunk.size + 1
-              # Don't include the last \r
+              # Don't include the last \r, which must be present
+              unless chunk.end_with?(CHUNK_VALID_ENDING[0])
+                raise HttpParserError, "Chunk size mismatch"
+              end
               write_chunk(chunk[0..(@partial_part_left-3)])
             else
               # don't include the last \r\n
               write_chunk(chunk)
             end
+          elsif chunk != CHUNK_VALID_ENDING[0]
+            # only the \r\n is left and one byte arrived: it must be the \r
+            raise HttpParserError, "Chunk size mismatch"
           end
           @partial_part_left -= chunk.size
           return false
@@ -733,6 +745,9 @@ module Puma
             write_chunk(part)
             @partial_part_left = len - part.size
           when got == len - 1 # edge where we get just \r but not \n
+            unless part.end_with?(CHUNK_VALID_ENDING[0])
+              raise HttpParserError, "Chunk size mismatch"
+            end
             write_chunk(part[0..-2])
             @partial_part_left = len - part.size
           end

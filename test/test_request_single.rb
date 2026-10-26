@@ -696,6 +696,36 @@ end
 # Tests invalid chunked requests
 class TestRequestChunkedInvalid < TestRequestBase
 
+  def test_chunked_split_missing_crlf_after_data
+    te = "Transfer-Encoding: chunked"
+
+    # in one read these bytes raise "Chunk size mismatch"
+    assert_invalid_segments ["#{GET_PREFIX}#{te}\r\n\r\n5\r\nhel", "loXX0\r\n\r\n"],
+      "Chunk size mismatch"
+  end
+
+  def test_chunked_split_missing_lf_after_data
+    te = "Transfer-Encoding: chunked"
+
+    assert_invalid_segments ["#{GET_PREFIX}#{te}\r\n\r\n5\r\nhello\r", "X0\r\n\r\n"],
+      "Chunk size mismatch"
+  end
+
+  def test_chunked_split_missing_cr_after_data
+    te = "Transfer-Encoding: chunked"
+
+    assert_invalid_segments ["#{GET_PREFIX}#{te}\r\n\r\n5\r\nhelloX", "\n0\r\n\r\n"],
+      "Chunk size mismatch"
+  end
+
+  def test_chunked_split_short_data
+    te = "Transfer-Encoding: chunked"
+
+    # the chunk is one byte short, so the bytes after it are "0\r", not CRLF
+    assert_invalid_segments ["#{GET_PREFIX}#{te}\r\n\r\n3\r\n", ";\r\n0\r\n\r\n"],
+      "Chunk size mismatch"
+  end
+
   def test_chunked_size_bare_lf
     te = "Transfer-Encoding: chunked"
 
