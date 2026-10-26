@@ -75,6 +75,14 @@ module Puma
         hash.each { |k, v| self[k] = v }
       end
 
+      # Hash#dup copies instance variables by reference; give the copy its own
+      # case-insensitive name index so that writes to it (as in #merge) do not
+      # corrupt the receiver's lookups.
+      def initialize_copy(other)
+        super
+        @names = @names.dup
+      end
+
       def each
         super do |k, v|
           yield(k, v.respond_to?(:to_ary) ? v.to_ary.join("\n") : v)
