@@ -84,6 +84,14 @@ class TestMiniSSL < PumaTest
       assert_equal("'cert_pem' is not a String", exception.message)
     end
 
+    def test_engine_server_rejects_non_context_without_crashing_at_gc
+      assert_raises(TypeError) { Puma::MiniSSL::Engine.server nil }
+      assert_raises(TypeError) { Puma::MiniSSL::Engine.server "not an SSLContext" }
+      # the rejected engines used to be freed with conn->ssl == NULL and segfault here
+      GC.start
+      GC.start
+    end
+
     def test_raises_with_invalid_key_password_command
       ctx = Puma::MiniSSL::Context.new
       ctx.key_password_command = '/unreadable/decrypt_command'

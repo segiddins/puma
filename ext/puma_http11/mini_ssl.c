@@ -44,12 +44,17 @@ void raise_param_error(const char* caller, const char *param) {
 
 void engine_free(void *ptr) {
   ms_conn *conn = ptr;
-  ms_cert_buf* cert_buf = (ms_cert_buf*)SSL_get_app_data(conn->ssl);
-  if(cert_buf) {
-    OPENSSL_free(cert_buf->buf);
-    free(cert_buf);
+  ms_cert_buf* cert_buf;
+
+  /* conn->ssl is NULL if engine_init_server raised before SSL_new */
+  if(conn->ssl) {
+    cert_buf = (ms_cert_buf*)SSL_get_app_data(conn->ssl);
+    if(cert_buf) {
+      OPENSSL_free(cert_buf->buf);
+      free(cert_buf);
+    }
+    SSL_free(conn->ssl);
   }
-  SSL_free(conn->ssl);
   SSL_CTX_free(conn->ctx);
 
   free(conn);
@@ -504,9 +509,10 @@ VALUE engine_init_server(VALUE self, VALUE sslctx) {
   SSL_CTX* ctx;
   SSL* ssl;
 
-  conn = engine_alloc(self, &obj);
-
+  /* type-check before allocating so a TypeError leaves nothing half-built */
   TypedData_Get_Struct(sslctx, SSL_CTX, &sslctx_type, ctx);
+
+  conn = engine_alloc(self, &obj);
 
   ssl = SSL_new(ctx);
   conn->ssl = ssl;
