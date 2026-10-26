@@ -84,6 +84,18 @@ class TestMiniSSL < PumaTest
       assert_equal("'cert_pem' is not a String", exception.message)
     end
 
+    def test_ssl_context_rejects_non_string_pem
+      examples = File.expand_path "../examples/puma", __dir__
+      [[:@cert_pem, 12345], [:@key_pem, :not_a_string]].each do |ivar, value|
+        ctx = Puma::MiniSSL::Context.new
+        ctx.key  = "#{examples}/puma_keypair.pem"
+        ctx.cert = "#{examples}/cert_puma.pem"
+        # the Ruby setters check for String; a duck-typed context does not have to
+        ctx.instance_variable_set ivar, value
+        assert_raises(TypeError) { Puma::MiniSSL::SSLContext.new ctx }
+      end
+    end
+
     def test_raises_with_invalid_key_password_command
       ctx = Puma::MiniSSL::Context.new
       ctx.key_password_command = '/unreadable/decrypt_command'

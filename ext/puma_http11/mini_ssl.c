@@ -313,6 +313,7 @@ sslctx_initialize(VALUE self, VALUE mini_ssl_ctx) {
     X509 *ca = NULL;
     unsigned long err;
 
+    StringValue(cert_pem);
     bio = BIO_new(BIO_s_mem());
     BIO_puts(bio, RSTRING_PTR(cert_pem));
 
@@ -372,6 +373,7 @@ sslctx_initialize(VALUE self, VALUE mini_ssl_ctx) {
   }
 
   if (!NIL_P(key_pem)) {
+    StringValue(key_pem);
     bio = BIO_new(BIO_s_mem());
     BIO_puts(bio, RSTRING_PTR(key_pem));
     pkey = PEM_read_bio_PrivateKey(bio, NULL, password_cb, (void *) password);
