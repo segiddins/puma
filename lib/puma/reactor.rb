@@ -78,8 +78,9 @@ module Puma
       begin
         until @input.closed? && @input.empty?
           # Wakeup any registered object that receives incoming data.
-          # Block until the earliest timeout or Selector#wakeup is called.
-          timeout = (earliest = @timeouts.first) && earliest.timeout
+          # Block until the earliest timeout or Selector#wakeup is called,
+          # or not at all while clients are still waiting to be registered.
+          timeout = @input.empty? ? (earliest = @timeouts.first) && earliest.timeout : 0
           @selector.select(timeout) do |monitor|
             wakeup!(monitor.value)
           end
@@ -88,12 +89,9 @@ module Puma
           timed_out = @timeouts.take_while { |client| client.timeout == 0 }
           timed_out.each { |client| wakeup!(client) }
 
-          unless @input.empty?
-            until @input.empty?
-              client = @input.pop
-              register(client) if client.io_ok?
-            end
-            @timeouts.sort_by!(&:timeout_at)
+          until @input.empty?
+            client = @input.pop
+            register(client) if client.io_ok?
           end
         end
       rescue StandardError => e
@@ -113,19 +111,46 @@ module Puma
       @selector.register(client.to_io, :r).value = client
       @reactor_size += 1
       @reactor_max = @reactor_size if @reactor_max < @reactor_size
-      @timeouts << client
-    rescue ArgumentError
-      # unreadable clients raise error when processed by NIO
+      insert_timeout client
+    rescue ArgumentError, IOError
+      # unreadable clients raise error when processed by NIO; a client closed
+      # between io_ok? and here raises IOError
     end
 
     # 'Wake up' a monitored object by calling the provided block.
     # Stop monitoring the object if the block returns `true`.
     def wakeup!(client)
+      timeout_at = client.timeout_at
       if @block.call client
         @selector.deregister client.to_io
         @reactor_size -= 1
-        @timeouts.delete client
+        remove_timeout client, timeout_at
+      elsif client.timeout_at != timeout_at
+        # still monitored with a new deadline: keep @timeouts sorted
+        remove_timeout client, timeout_at
+        insert_timeout client
       end
+    end
+
+    # @timeouts is kept sorted by timeout_at, so @timeouts.first is always
+    # the earliest deadline. Both operations are a binary search plus one
+    # Array#insert / #delete_at.
+    def insert_timeout(client)
+      at = client.timeout_at
+      i = @timeouts.bsearch_index { |c| c.timeout_at > at } || @timeouts.size
+      @timeouts.insert(i, client)
+    end
+
+    # +timeout_at+ is the deadline the client was sorted under; the client
+    # itself may already carry a later one.
+    def remove_timeout(client, timeout_at)
+      i = @timeouts.bsearch_index { |c| c.equal?(client) || c.timeout_at >= timeout_at }
+      while i && i < @timeouts.size
+        return @timeouts.delete_at(i) if @timeouts[i].equal?(client)
+        break unless @timeouts[i].timeout_at == timeout_at
+        i += 1
+      end
+      @timeouts.delete client # not where it was sorted: fall back to a scan
     end
   end
 end
