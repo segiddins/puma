@@ -28,8 +28,9 @@ module Puma
           contents << "#{k}: #{v}\n"
         when String
           next if v.strip.empty?
-          contents << (k == 'running_from' || v.to_s.include?(' ') ?
-            "#{k}: \"#{v}\"\n" : "#{k}: #{v}\n")
+          # quote paths, values with spaces and values a YAML parser would read as numbers
+          quote = k == 'running_from' || v.include?(' ') || v.match?(/\A\d+(\.\d+)?\z/)
+          contents << (quote ? "#{k}: \"#{v}\"\n" : "#{k}: #{v}\n")
         end
       end
 
@@ -47,11 +48,12 @@ module Puma
         next unless v && ALLOWED_FIELDS.include?(k)
         v = v.strip
         @options[k] =
-          case v
-          when ''              then nil
-          when /\A\d+\z/       then v.to_i
-          when /\A\d+\.\d+\z/  then v.to_f
-          else                      v.gsub(/\A"|"\z/, '')
+          if v.empty?
+            nil
+          elsif k == 'pid'
+            v.to_i
+          else
+            v.gsub(/\A"|"\z/, '')
           end
       end
     end
