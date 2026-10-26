@@ -85,6 +85,15 @@ class TestJSONSerialization < PumaTest
     assert_puma_json_generates_string 'null', value
   end
 
+  def test_generate_raises_error_for_non_finite_float
+    [Float::NAN, Float::INFINITY, -Float::INFINITY, {"x" => [Float::INFINITY]}].each do |value|
+      ex = assert_raises Puma::JSONSerialization::SerializationError do
+        Puma::JSONSerialization.generate value
+      end
+      assert_match(/non-finite Float/, ex.message)
+    end
+  end
+
   def test_generate_raises_error_for_unexpected_value_type
     value = /abc/
     ex = assert_raises Puma::JSONSerialization::SerializationError do

@@ -53,7 +53,10 @@ module Puma
             serialize_value output, member
           end
           output << ']'
-        when Integer, Float
+        when Integer
+          output << value.to_s
+        when Float
+          raise SerializationError, "Cannot serialize non-finite Float #{value}" unless value.finite?
           output << value.to_s
         when String
           serialize_string output, value
