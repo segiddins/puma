@@ -377,7 +377,8 @@ module Puma
     # @return [Boolean]
     #
     def illegal_header_key?(header_key)
-      !!(ILLEGAL_HEADER_KEY_REGEX =~ header_key.to_s)
+      key = header_key.to_s
+      key.empty? || !!(ILLEGAL_HEADER_KEY_REGEX =~ key)
     end
 
     # @param header_value [#to_s]
@@ -506,8 +507,8 @@ module Puma
           next
         end
 
-        ary = if vs.is_a?(::Array) && !vs.empty?
-          vs
+        ary = if vs.is_a?(::Array)
+          vs                                  # an empty Array is zero values (Rack 3)
         elsif vs.respond_to?(:to_s) && !vs.to_s.empty?
           vs.to_s.split NEWLINE
         else

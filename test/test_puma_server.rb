@@ -2598,4 +2598,14 @@ class TestPumaServer < PumaTest
     assert_equal 5, @server.max_threads
     assert_equal 0, @server.min_threads
   end
+
+  def test_empty_array_header_value_writes_no_header
+    server_run { |env| [200, {"x-empty" => [], "x-one" => ["a"]}, ["x"]] }
+    assert_equal ["x-one: a", "content-length: 1"], send_http_read_response(GET_11).headers
+  end
+
+  def test_empty_header_name_is_dropped
+    server_run { |env| [200, {"" => "v"}, ["x"]] }
+    assert_equal ["content-length: 1"], send_http_read_response(GET_11).headers
+  end
 end
