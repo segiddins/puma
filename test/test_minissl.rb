@@ -84,6 +84,47 @@ class TestMiniSSL < PumaTest
       assert_equal("'cert_pem' is not a String", exception.message)
     end
 
+    def test_read_nonblock_returns_data_sent_before_close_notify
+      require "openssl"
+      require "socket"
+      examples = File.expand_path "../examples/puma", __dir__
+      ctx = Puma::MiniSSL::Context.new
+      ctx.key  = "#{examples}/puma_keypair.pem"
+      ctx.cert = "#{examples}/cert_puma.pem"
+      ctx.verify_mode = Puma::MiniSSL::VERIFY_NONE
+      srv_io, cli_io = UNIXSocket.pair
+      sock = Puma::MiniSSL::Socket.new srv_io, Puma::MiniSSL::Engine.server(Puma::MiniSSL::SSLContext.new(ctx))
+
+      client_ctx = OpenSSL::SSL::SSLContext.new
+      client_ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      client = OpenSSL::SSL::SSLSocket.new cli_io, client_ctx
+      client.sync_close = true
+      request = "GET / HTTP/1.0\r\n\r\n"
+      thread = Thread.new do
+        client.connect
+        client.write request
+        client.close # close_notify follows the request in the same socket read
+      end
+
+      data = nil
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+      while data.nil?
+        begin
+          data = sock.read_nonblock 16_384 # drives the handshake, then returns the request
+        rescue IO::WaitReadable
+          flunk "timed out waiting for the request" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+          srv_io.wait_readable 0.1
+        end
+      end
+      thread.join
+
+      assert_equal request, data
+      assert_raises(EOFError) { sock.read_nonblock 16_384 }
+    ensure
+      thread&.join
+      srv_io&.close
+    end
+
     def test_raises_with_invalid_key_password_command
       ctx = Puma::MiniSSL::Context.new
       ctx.key_password_command = '/unreadable/decrypt_command'

@@ -80,6 +80,11 @@ module Puma
           output << additional_output
         end
         output
+      rescue EOFError
+        # close_notify arrived right behind application data: return the data
+        # now, the next read raises EOFError again
+        raise unless output
+        output
       end
 
       def read_nonblock(size, *_)
