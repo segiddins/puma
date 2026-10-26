@@ -211,7 +211,12 @@ module Puma
         # 101 (Switching Protocols) doesn't return here or have content_length,
         # it should be using `response_hijack`
         unless status == 101
-          if content_length && status != 204
+          if status == 205
+            # no content is sent, but the response must still be delimited
+            # (RFC 9110 §15.3.6); never the length of the suppressed body
+            io_buffer.append CONTENT_LENGTH_S, "0", line_ending
+          elsif content_length && status != 204 && status >= 200
+            # content-length is not allowed on 1xx and 204 (RFC 9110 §8.6)
             io_buffer.append CONTENT_LENGTH_S, content_length.to_s, line_ending
           end
 

@@ -2598,4 +2598,24 @@ class TestPumaServer < PumaTest
     assert_equal 5, @server.max_threads
     assert_equal 0, @server.min_threads
   end
+
+  def test_205_response_is_framed_with_content_length_zero
+    server_run { |env| [205, {}, ["reset"]] }
+    response = send_http_read_response GET_11
+    assert_equal "HTTP/1.1 205 Reset Content\r\ncontent-length: 0\r\n\r\n", response
+  end
+
+  def test_205_response_with_enumerable_body_is_framed_with_content_length_zero
+    body = Object.new
+    body.define_singleton_method(:each) { |&blk| blk.call "reset" }
+    server_run { |env| [205, {}, body] }
+    response = send_http_read_response GET_11
+    assert_equal "HTTP/1.1 205 Reset Content\r\ncontent-length: 0\r\n\r\n", response
+  end
+
+  def test_1xx_response_has_no_content_length
+    server_run { |env| [102, {}, ["body"]] }
+    response = send_http_read_response GET_11
+    assert_equal "HTTP/1.1 102 Processing\r\n\r\n", response
+  end
 end
