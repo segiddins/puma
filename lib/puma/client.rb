@@ -737,6 +737,12 @@ module Puma
             @partial_part_left = len - part.size
           end
         else
+          # A line ending in a bare LF is complete, so it can never become a
+          # valid chunk-size line; waiting for more data would never finish.
+          if line.end_with?("\n")
+            raise HttpParserError, "Chunk size line must end with CRLF"
+          end
+
           if @prev_chunk.size + line.size >= MAX_CHUNK_HEADER_SIZE
             raise HttpParserError, "maximum size of chunk header exceeded"
           end

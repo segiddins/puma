@@ -67,6 +67,33 @@ class TestRequestBase < PumaTest
     end
   end
 
+  # Like `assert_invalid`, but writes the request in the given segments and
+  # calls `try_to_finish` after each one, so the client sees exactly those
+  # read boundaries.
+  def assert_invalid_segments(segments, msg, err: Puma::HttpParserError)
+    env = {}
+    if Puma::IS_WINDOWS
+      @rd, @wr = Socket.pair Socket::AF_INET, Socket::SOCK_STREAM, 0
+    elsif USE_IO_PIPE
+      @rd, @wr = IO.pipe
+    else
+      @rd, @wr = UNIXSocket.pair
+    end
+    @rd.define_singleton_method :peeraddr, PEER_ADDR
+    @client = Puma::Client.new @rd, env
+    @client.supported_http_methods = HTTP_METHODS
+
+    error = assert_raises(err) do
+      segments.each do |seg|
+        @wr.syswrite seg
+        break if @client.try_to_finish
+      end
+    end
+    assert_equal msg, error.message
+    assert_equal "close", @client.env[HTTP_CONNECTION],
+      "env[\x27HTTP_CONNECTION\x27] should be set to \x27close\x27"
+  end
+
   def teardown
     @wr&.close
     @rd&.close
@@ -668,6 +695,20 @@ end
 
 # Tests invalid chunked requests
 class TestRequestChunkedInvalid < TestRequestBase
+
+  def test_chunked_size_bare_lf
+    te = "Transfer-Encoding: chunked"
+
+    assert_invalid "#{GET_PREFIX}#{te}\r\n\r\n5\nhello\r\n0\r\n\r\n",
+      "Chunk size line must end with CRLF"
+  end
+
+  def test_chunked_size_bare_lf_split
+    te = "Transfer-Encoding: chunked"
+
+    assert_invalid_segments ["#{GET_PREFIX}#{te}\r\n\r\n5\n", "hello\r\n0\r\n\r\n"],
+      "Chunk size line must end with CRLF"
+  end
 
   def test_chunked_size_bad_characters_1
     te = 'Transfer-Encoding: chunked'
