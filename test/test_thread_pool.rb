@@ -365,6 +365,28 @@ class TestThreadPool < PumaTest
     assert rescued
   end
 
+  def test_shutdown_does_not_reraise_a_dead_workers_exception
+    pool = new_pool(1, 1)
+    worker = pool.instance_variable_get(:@processors).first.thread
+
+    # An asynchronous exception reaches the worker while it is idle, i.e.
+    # outside the work block and its rescue.
+    worker.raise(RuntimeError, "async exception")
+    Timeout.timeout(5) do
+      begin
+        worker.join
+      rescue RuntimeError
+        # the thread died carrying the exception (behaviour before the fix)
+      end
+    end
+
+    refute worker.alive?
+    assert_equal 1, pool.spawned
+
+    pool.shutdown(1)   # must not raise RuntimeError
+    assert_equal 0, pool.spawned
+  end
+
   def test_waiting_on_startup
     pool = new_pool(1, 2)
     assert_equal 1, pool.waiting

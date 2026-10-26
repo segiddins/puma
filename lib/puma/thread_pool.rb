@@ -248,6 +248,13 @@ module Puma
             STDERR.puts "Error reached top of thread-pool: #{e.message} (#{e.class})"
           end
         end
+      rescue Exception => e
+        # An asynchronous exception (Thread#raise, including our own
+        # ForceShutdown landing after with_force_shutdown returned) can reach
+        # the thread outside the block above. Do not let the thread die with
+        # it: #shutdown joins the threads, and Thread#join would re-raise it
+        # in the caller.
+        STDERR.puts "Thread-pool thread exiting on uncaught exception: #{e.message} (#{e.class})"
       end
 
       @processors << processor
