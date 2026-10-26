@@ -50,3 +50,29 @@ class TestCommonLogger < PumaTest
     assert_empty e['rack.errors'].string
   end
 end
+
+class TestCommonLoggerEncodings < PumaTest
+  parallelize_me!
+
+  APP = TestCommonLogger::APP
+
+  # Header values come from the parser as ASCII-8BIT; app-set values such as
+  # REMOTE_USER may be UTF-8. The line must still be logged.
+  def test_logs_when_env_strings_have_incompatible_encodings
+    logger = StringIO.new
+    e = TestCommonLogger.new('x').env 'HTTP_X_FORWARDED_FOR' => "203.0.113.5\xFF".b, 'REMOTE_USER' => "josé"
+    Puma::CommonLogger.new(APP, logger).call e
+    e['rack.after_reply'].each(&:call)
+
+    assert_match %r{"GET /path HTTP/1\.1" 200 5 }, logger.string.b
+  end
+
+  def test_logs_hijack_when_env_strings_have_incompatible_encodings
+    logger = StringIO.new
+    e = TestCommonLogger.new('x').env 'HTTP_X_FORWARDED_FOR' => "203.0.113.5\xFF".b, 'REMOTE_USER' => "josé",
+      'rack.hijack_io' => :io
+    Puma::CommonLogger.new(APP, logger).call e
+
+    assert_match %r{"GET /path HTTP/1\.1" HIJACKED -1 }, logger.string.b
+  end
+end

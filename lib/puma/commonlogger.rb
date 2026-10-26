@@ -64,13 +64,13 @@ module Puma
       now = Time.now
 
       msg = HIJACK_FORMAT % [
-        env[HTTP_X_FORWARDED_FOR] || env[REMOTE_ADDR] || "-",
-        env[REMOTE_USER] || "-",
+        binary(env[HTTP_X_FORWARDED_FOR] || env[REMOTE_ADDR] || "-"),
+        binary(env[REMOTE_USER] || "-"),
         now.strftime(LOG_TIME_FORMAT),
-        env[REQUEST_METHOD],
-        env[PATH_INFO],
-        env[QUERY_STRING].empty? ? "" : "?#{env[QUERY_STRING]}",
-        env[SERVER_PROTOCOL],
+        binary(env[REQUEST_METHOD]),
+        binary(env[PATH_INFO]),
+        env[QUERY_STRING].empty? ? "" : binary("?#{env[QUERY_STRING]}"),
+        binary(env[SERVER_PROTOCOL]),
         now - began_at ]
 
       write(env, msg)
@@ -81,15 +81,15 @@ module Puma
       length = extract_content_length(header)
 
       msg = FORMAT % [
-        env[HTTP_X_FORWARDED_FOR] || env[REMOTE_ADDR] || "-",
-        env[REMOTE_USER] || "-",
+        binary(env[HTTP_X_FORWARDED_FOR] || env[REMOTE_ADDR] || "-"),
+        binary(env[REMOTE_USER] || "-"),
         now.strftime(LOG_TIME_FORMAT),
-        env[REQUEST_METHOD],
-        env[PATH_INFO],
-        env[QUERY_STRING].empty? ? "" : "?#{env[QUERY_STRING]}",
-        env[SERVER_PROTOCOL],
+        binary(env[REQUEST_METHOD]),
+        binary(env[PATH_INFO]),
+        env[QUERY_STRING].empty? ? "" : binary("?#{env[QUERY_STRING]}"),
+        binary(env[SERVER_PROTOCOL]),
         status.to_s[0..3],
-        length,
+        binary(length),
         now - began_at ]
 
       write(env, msg)
@@ -105,6 +105,15 @@ module Puma
       else
         logger << msg
       end
+    end
+
+    # Header values arrive from the parser as ASCII-8BIT while app-set values
+    # (REMOTE_USER, response headers) may be UTF-8. Formatting both into one
+    # line raises Encoding::CompatibilityError, and since the lambda runs from
+    # rack.after_reply the error is only debug-logged and the line is lost.
+    # Log the raw bytes instead.
+    def binary(value)
+      value.to_s.b
     end
 
     def extract_content_length(headers)
